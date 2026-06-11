@@ -1361,7 +1361,8 @@ public class MainActivity extends AppCompatActivity {
         int bestScore = Integer.MIN_VALUE;
         for (Piece mp : movablePieces) {
             int score = scoreBotMove(mp, allPieces, diceValue);
-            if (score > bestScore) {
+            // tiebreak: prefer the piece that has travelled furthest
+            if (score > bestScore || (score == bestScore && mp.numberOfSteps > best.numberOfSteps)) {
                 bestScore = score;
                 best = mp;
             }
@@ -1372,38 +1373,55 @@ public class MainActivity extends AppCompatActivity {
     private int scoreBotMove(Piece mp, List<Piece> allPieces, int diceValue) {
         int score = 0;
 
-        // Piece is not yet on the board — spawn only if we actually need more pieces
+        // Dead piece — score based on how urgently we need another piece on the board
         if (!mp.isAlive) {
             int aliveCount = 0;
             for (Piece p : allPieces) {
                 if (p.isAlive && !p.hasCompletedItsPurpose) aliveCount++;
             }
-            // Spawn eagerly when few pieces are out, reluctantly when board is full
+            // No pieces alive at all → top priority to spawn
+            if (aliveCount == 0) return 60;
+            // Otherwise spawn eagerly when few pieces are out
             score += 20 - (aliveCount * 5);
             return score;
         }
 
-        // Piece already finished — skip
+        // Finished piece — never move it again
         if (mp.hasCompletedItsPurpose) return Integer.MIN_VALUE;
 
-        // Winner zone (panta) — strongly prefer advancing the furthest piece
+        // Already in winner zone — strongly prefer advancing the furthest piece
         if (mp.isReadyToEnterWinnerZone) {
             score += 200 + mp.currWinnerBlock * 15 + diceValue;
             return score;
         }
 
-        int targetBlock = (mp.currBlock + diceValue) % 52;
+        // Simulate the actual target block step-by-step so we respect
+        // board wrap (51→0) and winner-zone entry at endPosition correctly
+        int simBlock = mp.currBlock;
+        boolean entersWinnerZone = false;
+        for (int i = 0; i < diceValue; i++) {
+            simBlock = (simBlock >= 51) ? 0 : simBlock + 1;
+            if (simBlock == mp.endPosition) {
+                entersWinnerZone = true;
+                break;
+            }
+        }
+        int targetBlock = simBlock;
 
-        // Check if this move enters the winner zone
-        if (targetBlock == mp.endPosition) {
-            score += 120;
+        // Entering the winner zone is the second-best outcome (after being in it)
+        if (entersWinnerZone) {
+            score += 150;
+            return score;
         }
 
-        // Kill bonus — highest in-game reward; prefer killing more advanced enemies
+        // Kill bonus — prefer killing more-advanced enemies
         for (Player player : players) {
             if (!player.color.equals(mp.colour)) {
                 for (Piece enemy : getPiecesByColor(player.color)) {
-                    if (enemy.isAlive && enemy.currBlock == targetBlock && !safeSpots.contains(targetBlock)) {
+                    if (enemy.isAlive && !enemy.hasCompletedItsPurpose
+                            && enemy.currBlock >= 0 && enemy.currBlock <= 51
+                            && enemy.currBlock == targetBlock
+                            && !safeSpots.contains(targetBlock)) {
                         score += 150 + enemy.numberOfSteps;
                     }
                 }
@@ -1415,32 +1433,36 @@ public class MainActivity extends AppCompatActivity {
             score += 60;
         }
 
-        // Reward escaping current danger
-        int currentDanger = getDangerLevel(mp.currBlock, mp.colour);
-        if (currentDanger > 0 && !safeSpots.contains(mp.currBlock)) {
-            score += currentDanger * 4;
+        // Reward escaping a currently dangerous square
+        if (!safeSpots.contains(mp.currBlock)) {
+            int currentDanger = getDangerLevel(mp.currBlock, mp.colour);
+            if (currentDanger > 0) score += currentDanger * 4;
         }
 
-        // Penalty for landing in a dangerous position
-        int targetDanger = getDangerLevel(targetBlock, mp.colour);
+        // Penalty for moving into a dangerous square
         if (!safeSpots.contains(targetBlock)) {
+            int targetDanger = getDangerLevel(targetBlock, mp.colour);
             score -= targetDanger * 5;
         }
 
-        // Prefer the piece that is furthest along (closer to winning)
+        // Prefer the piece that is furthest along the board
         score += mp.numberOfSteps / 4;
 
         return score;
     }
 
     private int getDangerLevel(int block, String myColor) {
+        // Squares outside the main path (winner zone / home) are never dangerous
+        if (block < 0 || block > 51) return 0;
         int danger = 0;
         for (Player player : players) {
             if (!player.color.equals(myColor)) {
                 for (Piece enemy : getPiecesByColor(player.color)) {
-                    if (enemy.isAlive) {
-                        // How many steps behind this block is the enemy (wrap-around safe)
-                        int behind = (block - enemy.currBlock + 52) % 52;
+                    // Only alive enemies on the main board path can be a threat
+                    if (enemy.isAlive && !enemy.hasCompletedItsPurpose
+                            && enemy.currBlock >= 0 && enemy.currBlock <= 51) {
+                        // Double-modulo ensures a positive result in Java
+                        int behind = ((block - enemy.currBlock) % 52 + 52) % 52;
                         if (behind >= 1 && behind <= 6) {
                             danger += (7 - behind); // closer enemy = higher danger
                         }
