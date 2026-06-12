@@ -180,7 +180,6 @@ public class MainActivity extends AppCompatActivity {
     boolean isSoundOn=true,isMusicOn=false;
 
     int botwins=0,botloses=0;
-    private long lastGreenSixTime = 0;
     private Random random = new Random();
 
     ImageView gameStartImageView;
@@ -1485,24 +1484,19 @@ public class MainActivity extends AppCompatActivity {
     }
 
     /**
-     * GREEN bot smart dice — color-only check, works in ALL modes.
-     * Priority: Timer-6 (10s) → Kill enemy → Enter home lane → Star spot → Spawn → Random
-     * RED / BLUE / YELLOW bots stay 100% random (never called here).
+     * GREEN player smart dice — works for human AND bot, ALL modes.
+     * Priority 1: Kill an enemy
+     * Priority 2: Enter home lane (land on endPosition)
+     * Priority 3: Land on star/safe spot {8, 21, 34, 47}
+     * Priority 4: Random 1-6
+     * No timer. No forced 6. No cheat.
      */
     private int computeGreenBotDice(List<Piece> greenPieces) {
         if (greenPieces == null || greenPieces.isEmpty()) {
             return random.nextInt(6) + 1;
         }
 
-        // PRIORITY 1: 10-SECOND TIMER — force a 6
-        long currentTime = System.currentTimeMillis();
-        if (currentTime - lastGreenSixTime >= 10000) {
-            lastGreenSixTime = currentTime;
-            return 6;
-        }
-
-        // Build flat position arrays from real Piece objects
-        // greenPos: currBlock of alive green pieces on main board (0-51), -1 otherwise
+        // Green piece positions on main board (0-51); -1 = not on main board
         int[] greenPos = new int[greenPieces.size()];
         for (int i = 0; i < greenPieces.size(); i++) {
             Piece p = greenPieces.get(i);
@@ -1510,52 +1504,45 @@ public class MainActivity extends AppCompatActivity {
                            && p.currBlock >= 0 && p.currBlock <= 51) ? p.currBlock : -1;
         }
 
-        // enemyPos: currBlock of all alive enemy pieces on main board (0-51)
-        List<Integer> enemyPosList = new ArrayList<>();
+        // Enemy positions on main board (0-51)
+        List<Integer> enemyPos = new ArrayList<>();
         for (Player player : players) {
             if (player.color.equals("green")) continue;
             for (Piece e : getPiecesByColor(player.color)) {
                 if (e.isAlive && !e.hasCompletedItsPurpose
                         && e.currBlock >= 0 && e.currBlock <= 51) {
-                    enemyPosList.add(e.currBlock);
+                    enemyPos.add(e.currBlock);
                 }
             }
         }
 
-        // PRIORITY 2A: KILL — if rolling `need` lands on a non-safe enemy, return need
+        // PRIORITY 1: KILL
         for (int g : greenPos) {
             if (g < 0) continue;
-            for (int e : enemyPosList) {
-                int need = ((e - g) % 52 + 52) % 52; // forward distance, wrap-safe
-                if (need >= 1 && need <= 6 && !safeSpots.contains(e)) {
-                    return need;
-                }
+            for (int e : enemyPos) {
+                int need = ((e - g) % 52 + 52) % 52;
+                if (need >= 1 && need <= 6 && !safeSpots.contains(e)) return need;
             }
         }
 
-        // PRIORITY 2B: ENTER HOME — land on endPosition (winner-zone mouth)
+        // PRIORITY 2: ENTER HOME LANE
         for (Piece p : greenPieces) {
             if (!p.isAlive || p.hasCompletedItsPurpose || p.isReadyToEnterWinnerZone) continue;
             int need = ((p.endPosition - p.currBlock) % 52 + 52) % 52;
             if (need >= 1 && need <= 6) return need;
         }
 
-        // PRIORITY 2C: STAR — land on safe/star spots {8, 21, 34, 47}
+        // PRIORITY 3: STAR SPOTS {8, 21, 34, 47}
         int[] stars = {8, 21, 34, 47};
         for (int g : greenPos) {
             if (g < 0) continue;
             for (int s : stars) {
                 int need = s - g;
-                if (need > 0 && need <= 6) return need;
+                if (need >= 1 && need <= 6) return need;
             }
         }
 
-        // PRIORITY 3: SPAWN — if any green piece is dead, need a 6
-        for (Piece p : greenPieces) {
-            if (!p.isAlive && !p.hasCompletedItsPurpose) return 6;
-        }
-
-        // PRIORITY 4: RANDOM fallback
+        // PRIORITY 4: RANDOM
         return random.nextInt(6) + 1;
     }
 
