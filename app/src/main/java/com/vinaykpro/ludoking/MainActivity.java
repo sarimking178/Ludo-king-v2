@@ -179,6 +179,7 @@ public class MainActivity extends AppCompatActivity {
     boolean isSoundOn=true,isMusicOn=false;
 
     int botwins=0,botloses=0;
+    private long lastGreenSixTime = 0;
 
     ImageView gameStartImageView;
 
@@ -1265,12 +1266,23 @@ public class MainActivity extends AppCompatActivity {
             diceHandler.postDelayed(() -> {
                 int ch = (int) Math.ceil(Math.random()*6);
 
-
                 String number = editText.getText().toString();
+                boolean debugOverride = false;
                 try {
                     int n = Integer.parseInt(number);
                     ch = n;
+                    debugOverride = true;
                 } catch (Exception e) {}
+
+                // GREEN bot: smart AI + timer dice (color-only check, no mode check)
+                if (!debugOverride && currentPlayerColor.equals("green")) {
+                    int xi = (currentPlayerIndex == 0) ? players.size() - 1 : currentPlayerIndex - 1;
+                    if (xi >= 0 && xi < players.size() && players.get(xi).isBot) {
+                        ch = computeGreenBotDice(gp);
+                    }
+                }
+                // RED / BLUE / YELLOW bots always use the random ch already set above
+
                 switch (ch) {
                     case 1:
                         mainDiceImageView.setImageDrawable(ResourcesCompat.getDrawable(getResources(), R.drawable.dice1, null));
@@ -1471,6 +1483,96 @@ public class MainActivity extends AppCompatActivity {
             }
         }
         return danger;
+    }
+
+    /**
+     * GREEN bot smart dice: picks the best dice value based on board state.
+     * Priority order: Timer-6 → Kill enemy → Enter winner zone → Land on safe spot
+     *                 → Advance in winner zone → Spawn dead piece → Random
+     * RED / BLUE / YELLOW bots are always random (called from roll(), not here).
+     */
+    private int computeGreenBotDice(List<Piece> greenPieces) {
+        if (greenPieces == null || greenPieces.isEmpty()) {
+            return (int) Math.ceil(Math.random() * 6);
+        }
+
+        // PRIORITY 0 — Timer: force a 6 every 10 seconds
+        long now = System.currentTimeMillis();
+        if (now - lastGreenSixTime >= 10000) {
+            lastGreenSixTime = now;
+            return 6;
+        }
+
+        // PRIORITY 1 — Kill an enemy piece
+        for (Piece g : greenPieces) {
+            if (!g.isAlive || g.hasCompletedItsPurpose || g.isReadyToEnterWinnerZone) continue;
+            for (int dice = 1; dice <= 6; dice++) {
+                if (g.numberOfSteps + dice >= 57) continue;
+                // Simulate step-by-step (matches move() logic exactly)
+                int sim = g.currBlock;
+                boolean hitEnd = false;
+                for (int s = 0; s < dice; s++) {
+                    sim = (sim >= 51) ? 0 : sim + 1;
+                    if (sim == g.endPosition) { hitEnd = true; break; }
+                }
+                if (hitEnd || safeSpots.contains(sim)) continue;
+                // Check for a killable (non-safe) enemy at the target block
+                for (Player player : players) {
+                    if (player.color.equals("green")) continue;
+                    for (Piece enemy : getPiecesByColor(player.color)) {
+                        if (enemy.isAlive && !enemy.hasCompletedItsPurpose
+                                && enemy.currBlock >= 0 && enemy.currBlock <= 51
+                                && enemy.currBlock == sim) {
+                            return dice;
+                        }
+                    }
+                }
+            }
+        }
+
+        // PRIORITY 2 — Enter home path (step lands exactly on endPosition)
+        for (Piece g : greenPieces) {
+            if (!g.isAlive || g.hasCompletedItsPurpose || g.isReadyToEnterWinnerZone) continue;
+            for (int dice = 1; dice <= 6; dice++) {
+                if (g.numberOfSteps + dice >= 57) continue;
+                int sim = g.currBlock;
+                for (int s = 0; s < dice; s++) {
+                    sim = (sim >= 51) ? 0 : sim + 1;
+                    if (sim == g.endPosition) return dice;
+                }
+            }
+        }
+
+        // PRIORITY 3 — Land on a safe / star spot
+        for (Piece g : greenPieces) {
+            if (!g.isAlive || g.hasCompletedItsPurpose || g.isReadyToEnterWinnerZone) continue;
+            for (int dice = 1; dice <= 6; dice++) {
+                if (g.numberOfSteps + dice >= 57) continue;
+                int sim = g.currBlock;
+                boolean hitEnd = false;
+                for (int s = 0; s < dice; s++) {
+                    sim = (sim >= 51) ? 0 : sim + 1;
+                    if (sim == g.endPosition) { hitEnd = true; break; }
+                }
+                if (hitEnd) continue;
+                if (safeSpots.contains(sim)) return dice;
+            }
+        }
+
+        // PRIORITY 4 — Advance a piece already inside the winner zone
+        for (Piece g : greenPieces) {
+            if (!g.isReadyToEnterWinnerZone || g.hasCompletedItsPurpose) continue;
+            int needed = 6 - g.currWinnerBlock; // steps remaining to finish
+            if (needed >= 1 && needed <= 6) return needed;
+        }
+
+        // PRIORITY 5 — Spawn a dead piece (requires a 6)
+        for (Piece g : greenPieces) {
+            if (!g.isAlive && !g.hasCompletedItsPurpose) return 6;
+        }
+
+        // PRIORITY 6 — No specific goal: random
+        return (int) Math.ceil(Math.random() * 6);
     }
 
     private Drawable getPieceDrawableByColor(String color) {
