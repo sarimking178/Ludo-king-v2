@@ -1276,14 +1276,11 @@ public class MainActivity extends AppCompatActivity {
                     debugOverride = true;
                 } catch (Exception e) {}
 
-                // GREEN bot: smart AI + timer dice (color-only check, no mode check)
+                // GREEN player (human OR bot, ALL modes): smart AI + timer dice
                 if (!debugOverride && currentPlayerColor.equals("green")) {
-                    int xi = (currentPlayerIndex == 0) ? players.size() - 1 : currentPlayerIndex - 1;
-                    if (xi >= 0 && xi < players.size() && players.get(xi).isBot) {
-                        ch = computeGreenBotDice(gp);
-                    }
+                    ch = computeGreenBotDice(gp);
                 }
-                // RED / BLUE / YELLOW bots always use the random ch already set above
+                // RED / BLUE / YELLOW always use the random ch set above
 
                 switch (ch) {
                     case 1:
