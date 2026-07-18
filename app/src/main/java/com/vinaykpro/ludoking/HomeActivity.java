@@ -65,6 +65,12 @@ public class HomeActivity extends AppCompatActivity implements View.OnClickListe
     TextView usernamehomescreen,diamondscount1,diamondscount2,coinscount1,coinscount2;
     // settings layout views
     ImageView stgsbackbtn,stgssharebtn,stgslikebtn,stgsgeturpverifiedbtn,stgssoundonoffbtn,stgsmusiconoffbtn,stgsplaybtn,stgslanguagebtn,stgsselectbtn,stgsviewbtn1,stgsfaqbtn,stgscomposebtn,stgsrulesbtn,stgsviewbtn2,stgsmoregamesbtn,stgslboardbtn,stgsviewbtn3,stgseditbtn,stgsinfobtn,stgsdelaccountbtn,stgsfbbtn,stgsinstabtn,stgstwitterbtn,stgsytbtn,stgsmoregameslongbtn;
+    // AI control
+    TextView aiGreenBtn, aiRedBtn, aiBlueBtn, aiYellowBtn;
+    String selectedColor = "green";
+    long lastAiTapTime = 0;
+    String lastAiTapColor = "";
+    android.os.Handler aiAutoResetHandler = new android.os.Handler();
     // statistics layout views
     ImageView stcsusernamebtn,stcsprofpic,stcsbackbtn,stcseditprofile,stcslgwfb,stcslgwggl,stcslgwpg,stcsfshare;
     TextView stcsusernametextview;
@@ -2044,6 +2050,50 @@ public class HomeActivity extends AppCompatActivity implements View.OnClickListe
         stgsytbtn = findViewById(R.id.yticonbtn);
         stgsmoregameslongbtn = findViewById(R.id.settingsmoregamesbtn);
 
+        // AI Control buttons
+        aiGreenBtn  = findViewById(R.id.ai_btn_green);
+        aiRedBtn    = findViewById(R.id.ai_btn_red);
+        aiBlueBtn   = findViewById(R.id.ai_btn_blue);
+        aiYellowBtn = findViewById(R.id.ai_btn_yellow);
+
+        selectedColor = getSharedPreferences("LudoAI", MODE_PRIVATE).getString("selectedColor", "green");
+        updateAiButtonStates();
+
+        View.OnClickListener aiClick = new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                long now = System.currentTimeMillis();
+                String tapped;
+                if      (v.getId() == R.id.ai_btn_green)  tapped = "green";
+                else if (v.getId() == R.id.ai_btn_red)    tapped = "red";
+                else if (v.getId() == R.id.ai_btn_blue)   tapped = "blue";
+                else                                       tapped = "yellow";
+
+                if (tapped.equals(lastAiTapColor) && (now - lastAiTapTime) < 400) {
+                    // Double-tap: deselect all, then auto-reselect green after 1 s
+                    selectedColor = "";
+                    aiAutoResetHandler.removeCallbacksAndMessages(null);
+                    aiAutoResetHandler.postDelayed(() -> {
+                        selectedColor = "green";
+                        getSharedPreferences("LudoAI", MODE_PRIVATE).edit().putString("selectedColor", "green").apply();
+                        updateAiButtonStates();
+                    }, 1000);
+                } else {
+                    // Single-tap: select only this color
+                    selectedColor = tapped;
+                    aiAutoResetHandler.removeCallbacksAndMessages(null);
+                }
+                lastAiTapTime  = now;
+                lastAiTapColor = tapped;
+                getSharedPreferences("LudoAI", MODE_PRIVATE).edit().putString("selectedColor", selectedColor).apply();
+                updateAiButtonStates();
+            }
+        };
+        aiGreenBtn.setOnClickListener(aiClick);
+        aiRedBtn.setOnClickListener(aiClick);
+        aiBlueBtn.setOnClickListener(aiClick);
+        aiYellowBtn.setOnClickListener(aiClick);
+
         // statistics layout views
         statisticslayout = findViewById(R.id.statisticslayout);
         stcsusernamebtn = findViewById(R.id.imageView61);
@@ -2502,6 +2552,18 @@ public class HomeActivity extends AppCompatActivity implements View.OnClickListe
                 m.start();
             }
         }
+    }
+
+    private void updateAiButtonStates() {
+        int activeGreen  = 0xFF4CAF50;
+        int activeRed    = 0xFFE53935;
+        int activeBlue   = 0xFF1E88E5;
+        int activeYellow = 0xFFFDD835;
+        int inactive     = 0xFF555555;
+        aiGreenBtn .setBackgroundColor("green" .equals(selectedColor) ? activeGreen  : inactive);
+        aiRedBtn   .setBackgroundColor("red"   .equals(selectedColor) ? activeRed    : inactive);
+        aiBlueBtn  .setBackgroundColor("blue"  .equals(selectedColor) ? activeBlue   : inactive);
+        aiYellowBtn.setBackgroundColor("yellow".equals(selectedColor) ? activeYellow : inactive);
     }
 
     @Override

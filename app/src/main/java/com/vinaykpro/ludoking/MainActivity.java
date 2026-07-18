@@ -181,6 +181,7 @@ public class MainActivity extends AppCompatActivity {
 
     int botwins=0,botloses=0;
     private Random random = new Random();
+    String selectedColor = "green";
 
     ImageView gameStartImageView;
 
@@ -1275,11 +1276,11 @@ public class MainActivity extends AppCompatActivity {
                     debugOverride = true;
                 } catch (Exception e) {}
 
-                // GREEN player (human OR bot, ALL modes): smart AI + timer dice
-                if (!debugOverride && currentPlayerColor.equals("green")) {
-                    ch = computeGreenBotDice(gp);
+                // AI-controlled color (set in Settings): smart dice for that color only
+                if (!debugOverride && !selectedColor.isEmpty() && currentPlayerColor.equals(selectedColor)) {
+                    ch = computeGreenBotDice(getPiecesByColor(selectedColor));
                 }
-                // RED / BLUE / YELLOW always use the random ch set above
+                // All other colors use the random ch set above
 
                 switch (ch) {
                     case 1:
@@ -1507,7 +1508,7 @@ public class MainActivity extends AppCompatActivity {
         // Enemy positions on main board (0-51)
         List<Integer> enemyPos = new ArrayList<>();
         for (Player player : players) {
-            if (player.color.equals("green")) continue;
+            if (player.color.equals(selectedColor)) continue;
             for (Piece e : getPiecesByColor(player.color)) {
                 if (e.isAlive && !e.hasCompletedItsPurpose
                         && e.currBlock >= 0 && e.currBlock <= 51) {
@@ -2975,6 +2976,8 @@ public class MainActivity extends AppCompatActivity {
         View dview = getWindow().getDecorView();
         int uiOptions = View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY;
         dview.setSystemUiVisibility(uiOptions);
+        // Load the AI-controlled color chosen in Settings
+        selectedColor = getSharedPreferences("LudoAI", MODE_PRIVATE).getString("selectedColor", "green");
     }
 
     void moveToTopLeft()
